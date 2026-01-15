@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <!-- Target the Windows-specific TFM for WPF -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- Enable WPF support -->
+    <UseWPF>true</UseWPF>
+    <!-- Use WinForms as host to get window handles easily -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Build a windowed executable -->
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>WindowsAppMvp</AssemblyName>
+  </PropertyGroup>
+</Project>

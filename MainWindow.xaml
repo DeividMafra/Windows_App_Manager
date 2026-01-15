@@ -1,0 +1,20 @@
+<Window x:Class="WindowsAppMvp.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:forms="clr-namespace:System.Windows.Forms;assembly=System.Windows.Forms"
+        xmlns:wfi="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
+        Title="App Container MVP" Height="600" Width="800">
+    <DockPanel>
+        <!-- Top bar with program selection and open button -->
+        <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="5">
+            <ComboBox x:Name="ProgramComboBox" Width="160" Margin="0,0,5,0">
+                <ComboBoxItem Content="notepad.exe" />
+                <ComboBoxItem Content="calc.exe" />
+                <ComboBoxItem Content="mspaint.exe" />
+            </ComboBox>
+            <Button Content="Open" Click="OpenButton_Click" />
+        </StackPanel>
+        <!-- Tab control to host external apps -->
+        <TabControl x:Name="AppTabControl" Margin="5" />
+    </DockPanel>
+</Window>
