@@ -1,5 +1,14 @@
 [
-  "C:\\Local\\GJCWIN\\SBBWIN.EXE",
-  "mspaint.exe",
-  "\"C:\\Local\\GJCWIN\\SBBWIN.EXE\" C:\\Local\\GJCWIN\\DATA\\JONAS.INI GJC00"
+  {
+    "Title": "JCM shortcut",
+    "Command": "C:\\Local\\GJCWIN\\SBBWIN.EXE C:\\Local\\GJCWIN\\DATA\\JONAS.INI GJC01"
+  },
+  {
+    "Title": "MS Paint",
+    "Command": "mspaint.exe"
+  },
+  {
+    "Title": "JCM (no args)",
+    "Command": "C:\\Local\\GJCWIN\\SBBWIN.EXE"
+  }
 ]

@@ -31,7 +31,8 @@
                              Foreground="White"
                              Margin="8"
                              HorizontalContentAlignment="Stretch"
-                             MouseDoubleClick="MenuListBox_MouseDoubleClick">
+                             MouseDoubleClick="MenuListBox_MouseDoubleClick"
+                             ToolTipService.ShowOnDisabled="True">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="8"/>
@@ -60,10 +61,10 @@
 
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" >
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" ToolTip="{Binding Command}">
                                     <!-- simple icon placeholder -->
                                     <Ellipse Width="12" Height="12" Fill="#F6C85F" Margin="8,0,12,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>

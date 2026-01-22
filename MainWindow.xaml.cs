@@ -12,6 +12,8 @@ using System.Windows.Input;
 
 namespace WindowsAppMvp
 {
+    public record ProgramEntry(string Title, string Command);
+
     public partial class MainWindow : Window
     {
         public MainWindow()
@@ -22,22 +24,26 @@ namespace WindowsAppMvp
 
         private readonly List<Process> _processes = new List<Process>();
         private const string ProgramsFileName = "programs.json";
-        private List<string> _programs = new();
+        private List<ProgramEntry> _programs = new();
 
         private void LoadPrograms()
         {
             try
             {
-                // Always read from the fixed development path
                 string path = @"C:\Dev\App_Manager\programs.json";
                 if (System.IO.File.Exists(path))
                 {
                     var json = System.IO.File.ReadAllText(path);
-                    _programs = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+                    _programs = System.Text.Json.JsonSerializer.Deserialize<List<ProgramEntry>>(json) ?? new List<ProgramEntry>();
                 }
                 else
                 {
-                    _programs = new List<string> { "notepad.exe", "calc.exe", "mspaint.exe" };
+                    _programs = new List<ProgramEntry>
+                    {
+                        new ProgramEntry("Notepad", "notepad.exe"),
+                        new ProgramEntry("Calculator", "calc.exe"),
+                        new ProgramEntry("Paint", "mspaint.exe")
+                    };
                 }
 
                 MenuListBox.ItemsSource = _programs;
@@ -45,8 +51,12 @@ namespace WindowsAppMvp
             }
             catch
             {
-                // fall back to defaults
-                _programs = new List<string> { "notepad.exe", "calc.exe", "mspaint.exe" };
+                _programs = new List<ProgramEntry>
+                {
+                    new ProgramEntry("Notepad", "notepad.exe"),
+                    new ProgramEntry("Calculator", "calc.exe"),
+                    new ProgramEntry("Paint", "mspaint.exe")
+                };
                 MenuListBox.ItemsSource = _programs;
                 MenuListBox.SelectedIndex = 0;
             }
@@ -56,7 +66,6 @@ namespace WindowsAppMvp
         {
             try
             {
-                // keep persistence consistent with LoadPrograms path
                 string path = @"C:\Dev\App_Manager\programs.json";
                 var json = System.Text.Json.JsonSerializer.Serialize(_programs, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
                 System.IO.File.WriteAllText(path, json);
@@ -69,9 +78,9 @@ namespace WindowsAppMvp
 
         private async void MenuListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (MenuListBox.SelectedItem is string program && !string.IsNullOrWhiteSpace(program))
+            if (MenuListBox.SelectedItem is ProgramEntry entry && !string.IsNullOrWhiteSpace(entry.Command))
             {
-                await OpenExternalAppAsync(program);
+                await OpenExternalAppAsync(entry.Command, entry.Title);
             }
         }
 
@@ -81,7 +90,6 @@ namespace WindowsAppMvp
             input = input.Trim();
             if (input.StartsWith("\""))
             {
-                // quoted executable path
                 int endQuote = input.IndexOf('"', 1);
                 if (endQuote > 0)
                 {
@@ -91,7 +99,6 @@ namespace WindowsAppMvp
                 }
             }
 
-            // unquoted: split on first space
             int firstSpace = input.IndexOf(' ');
             if (firstSpace < 0) return (input, string.Empty);
             string fileUnquoted = input.Substring(0, firstSpace);
@@ -99,7 +106,7 @@ namespace WindowsAppMvp
             return (fileUnquoted, remainingArgs);
         }
 
-        private async Task OpenExternalAppAsync(string programPath)
+        private async Task OpenExternalAppAsync(string programCommand, string title)
         {
             TabItem tabItem = null;
             WindowsFormsHost host = null;
@@ -107,11 +114,10 @@ namespace WindowsAppMvp
 
             try
             {
-                // Create UI objects on the UI thread
                 Dispatcher.Invoke(() =>
                 {
                     tabItem = new TabItem();
-                    tabItem.Header = CreateTabHeader(programPath, tabItem);
+                    tabItem.Header = CreateTabHeader(title, tabItem);
 
                     host = new WindowsFormsHost();
                     panel = new System.Windows.Forms.Panel
@@ -126,12 +132,11 @@ namespace WindowsAppMvp
                     tabItem.IsSelected = true;
                 });
 
-                var (file, args) = ParseProgramAndArgs(programPath);
+                var (file, args) = ParseProgramAndArgs(programCommand);
 
                 var process = await StartProcessAndEmbedAsync(file, args, panel).ConfigureAwait(false);
                 if (process != null)
                 {
-                    // Tag and track process on UI thread
                     Dispatcher.Invoke(() =>
                     {
                         if (tabItem != null)
@@ -153,7 +158,7 @@ namespace WindowsAppMvp
             {
                 Dispatcher.Invoke(() =>
                 {
-                    System.Windows.MessageBox.Show($"Failed to open {programPath}: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    System.Windows.MessageBox.Show($"Failed to open {title}: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 });
             }
         }
@@ -171,7 +176,6 @@ namespace WindowsAppMvp
             var process = new Process { StartInfo = psi };
             process.Start();
 
-            // Wait for main window handle with timeout (don't block UI thread)
             var sw = Stopwatch.StartNew();
             const int timeoutMs = 5000;
             while (process.MainWindowHandle == IntPtr.Zero && !process.HasExited && sw.ElapsedMilliseconds < timeoutMs)
@@ -187,22 +191,18 @@ namespace WindowsAppMvp
 
             IntPtr mainHandle = process.MainWindowHandle;
 
-            // Set parent and change styles on UI thread (hostPanel.Handle must be accessed from the thread that owns it)
             Dispatcher.Invoke(() =>
             {
                 NativeMethods.SetParent(mainHandle, hostPanel.Handle);
 
-                // Update styles: remove caption/frame, set child & visible
                 long style = NativeMethods.GetWindowLongPtr(mainHandle, NativeMethods.GWL_STYLE).ToInt64();
                 style &= ~(NativeMethods.WS_CAPTION | NativeMethods.WS_THICKFRAME);
                 style |= (NativeMethods.WS_CHILD | NativeMethods.WS_VISIBLE);
                 NativeMethods.SetWindowLongPtr(mainHandle, NativeMethods.GWL_STYLE, new IntPtr(style));
 
-                // Force window to update style and show
                 NativeMethods.SetWindowPos(mainHandle, IntPtr.Zero, 0, 0, hostPanel.ClientSize.Width, hostPanel.ClientSize.Height,
                     NativeMethods.SWP_NOZORDER | NativeMethods.SWP_SHOWWINDOW | NativeMethods.SWP_FRAMECHANGED);
 
-                // Handle resizing
                 hostPanel.SizeChanged += (s, e) =>
                 {
                     NativeMethods.SetWindowPos(mainHandle, IntPtr.Zero, 0, 0, hostPanel.ClientSize.Width, hostPanel.ClientSize.Height,
