@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Forms.Integration;
 using System.Windows.Threading;
 using System.Windows.Forms;
+using System.Windows.Input;
 
 namespace WindowsAppMvp
 {
@@ -39,15 +40,15 @@ namespace WindowsAppMvp
                     _programs = new List<string> { "notepad.exe", "calc.exe", "mspaint.exe" };
                 }
 
-                ProgramComboBox.ItemsSource = _programs;
-                if (_programs.Count > 0) ProgramComboBox.SelectedIndex = 0;
+                MenuListBox.ItemsSource = _programs;
+                if (_programs.Count > 0) MenuListBox.SelectedIndex = 0;
             }
             catch
             {
                 // fall back to defaults
                 _programs = new List<string> { "notepad.exe", "calc.exe", "mspaint.exe" };
-                ProgramComboBox.ItemsSource = _programs;
-                ProgramComboBox.SelectedIndex = 0;
+                MenuListBox.ItemsSource = _programs;
+                MenuListBox.SelectedIndex = 0;
             }
         }
 
@@ -55,7 +56,8 @@ namespace WindowsAppMvp
         {
             try
             {
-                string path = System.IO.Path.Combine(AppContext.BaseDirectory, ProgramsFileName);
+                // keep persistence consistent with LoadPrograms path
+                string path = @"C:\Dev\App_Manager\programs.json";
                 var json = System.Text.Json.JsonSerializer.Serialize(_programs, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
                 System.IO.File.WriteAllText(path, json);
             }
@@ -65,16 +67,10 @@ namespace WindowsAppMvp
             }
         }
 
-        private async void OpenButton_Click(object sender, RoutedEventArgs e)
+        private async void MenuListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            string? program = null;
-            // Support both bound strings and legacy ComboBoxItem entries
-            if (ProgramComboBox.SelectedItem is string s) program = s;
-            else if (ProgramComboBox.SelectedItem is ComboBoxItem item && item.Content is string c) program = c;
-
-            if (!string.IsNullOrEmpty(program))
+            if (MenuListBox.SelectedItem is string program && !string.IsNullOrWhiteSpace(program))
             {
-                // NOTE: intentionally not using ConfigureAwait(false) so continuation runs on UI thread
                 await OpenExternalAppAsync(program);
             }
         }
@@ -177,18 +173,9 @@ namespace WindowsAppMvp
 
             // Wait for main window handle with timeout (don't block UI thread)
             var sw = Stopwatch.StartNew();
-            const int timeoutMs = 15000; // increased timeout
+            const int timeoutMs = 5000;
             while (process.MainWindowHandle == IntPtr.Zero && !process.HasExited && sw.ElapsedMilliseconds < timeoutMs)
             {
-                // attempt to let the GUI initialize
-                try
-                {
-                    process.WaitForInputIdle(200);
-                }
-                catch
-                {
-                    // WaitForInputIdle can throw for non-GUI processes — ignore
-                }
                 await Task.Delay(100).ConfigureAwait(false);
             }
 

@@ -3,14 +3,76 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:forms="clr-namespace:System.Windows.Forms;assembly=System.Windows.Forms"
         xmlns:wfi="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
-        Title="App Container MVP" Height="600" Width="800">
+        Title="App Container MVP" Height="600" Width="1000">
     <DockPanel>
-        <!-- Top bar with program selection and open button -->
-        <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="5">
-            <ComboBox x:Name="ProgramComboBox" Width="160" Margin="0,0,5,0" />
-            <Button Content="Open" Click="OpenButton_Click" />
-        </StackPanel>
-        <!-- Tab control to host external apps -->
-        <TabControl x:Name="AppTabControl" Margin="5" />
+        <!-- Top menu bar (kept minimal) -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File" />
+            <MenuItem Header="_Edit" />
+            <MenuItem Header="_View" />
+            <MenuItem Header="_Window" />
+            <MenuItem Header="_Help" />
+        </Menu>
+
+        <!-- Main layout: left vertical menu and right content area -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left navigation panel -->
+            <Border Grid.Column="0" Background="#2F4150" Padding="0">
+                <StackPanel>
+                    <TextBlock Text="Menu" FontSize="20" Foreground="White" FontWeight="SemiBold" Margin="16,16,16,8"/>
+                    <ListBox x:Name="MenuListBox"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Foreground="White"
+                             Margin="8"
+                             HorizontalContentAlignment="Stretch"
+                             MouseDoubleClick="MenuListBox_MouseDoubleClick">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="8"/>
+                                <Setter Property="Margin" Value="4,2"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="Bd" Background="Transparent" CornerRadius="4">
+                                                <ContentPresenter Margin="4" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#394B56"/>
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#26343C"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" >
+                                    <!-- simple icon placeholder -->
+                                    <Ellipse Width="12" Height="12" Fill="#F6C85F" Margin="8,0,12,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </Border>
+
+            <!-- Right content: tab control for embedded apps -->
+            <TabControl x:Name="AppTabControl" Grid.Column="1" Margin="8" />
+        </Grid>
     </DockPanel>
 </Window>
