@@ -1,14 +1,17 @@
 [
   {
-    "Title": "JCM shortcut",
-    "Command": "C:\\Local\\GJCWIN\\SBBWIN.EXE C:\\Local\\GJCWIN\\DATA\\JONAS.INI GJC01"
+    "Title": "SBBWIN - Jonas",
+    "Command": "C:\\Local\\GJCWIN\\SBBWIN.EXE C:\\Local\\GJCWIN\\DATA\\JONAS.INI GJC00",
+    "StartIn": "C:\\Local\\GJCWIN\\DATA"
   },
   {
     "Title": "MS Paint",
-    "Command": "mspaint.exe"
+    "Command": "mspaint.exe",
+    "StartIn": ""
   },
   {
-    "Title": "JCM (no args)",
-    "Command": "C:\\Local\\GJCWIN\\SBBWIN.EXE"
+    "Title": "SBBWIN (no args)",
+    "Command": "C:\\Local\\GJCWIN\\SBBWIN.EXE",
+    "StartIn": ""
   }
 ]

@@ -9,10 +9,11 @@ using System.Windows.Forms.Integration;
 using System.Windows.Threading;
 using System.Windows.Forms;
 using System.Windows.Input;
+using System.Linq;
 
 namespace WindowsAppMvp
 {
-    public record ProgramEntry(string Title, string Command);
+    public record ProgramEntry(string Title, string Command, string? StartIn = null);
 
     public partial class MainWindow : Window
     {
@@ -40,9 +41,9 @@ namespace WindowsAppMvp
                 {
                     _programs = new List<ProgramEntry>
                     {
-                        new ProgramEntry("Notepad", "notepad.exe"),
-                        new ProgramEntry("Calculator", "calc.exe"),
-                        new ProgramEntry("Paint", "mspaint.exe")
+                        new ProgramEntry("Notepad", "notepad.exe", null),
+                        new ProgramEntry("Calculator", "calc.exe", null),
+                        new ProgramEntry("Paint", "mspaint.exe", null)
                     };
                 }
 
@@ -53,9 +54,9 @@ namespace WindowsAppMvp
             {
                 _programs = new List<ProgramEntry>
                 {
-                    new ProgramEntry("Notepad", "notepad.exe"),
-                    new ProgramEntry("Calculator", "calc.exe"),
-                    new ProgramEntry("Paint", "mspaint.exe")
+                    new ProgramEntry("Notepad", "notepad.exe", null),
+                    new ProgramEntry("Calculator", "calc.exe", null),
+                    new ProgramEntry("Paint", "mspaint.exe", null)
                 };
                 MenuListBox.ItemsSource = _programs;
                 MenuListBox.SelectedIndex = 0;
@@ -80,33 +81,56 @@ namespace WindowsAppMvp
         {
             if (MenuListBox.SelectedItem is ProgramEntry entry && !string.IsNullOrWhiteSpace(entry.Command))
             {
-                await OpenExternalAppAsync(entry.Command, entry.Title);
+                await OpenExternalAppAsync(entry.Command, entry.Title, entry.StartIn);
             }
         }
 
         private static (string file, string args) ParseProgramAndArgs(string input)
         {
-            if (string.IsNullOrWhiteSpace(input)) return (input, string.Empty);
+            if (string.IsNullOrWhiteSpace(input)) return (string.Empty, string.Empty);
+
             input = input.Trim();
-            if (input.StartsWith("\""))
+            var tokens = new List<string>();
+            int i = 0, n = input.Length;
+
+            while (i < n)
             {
-                int endQuote = input.IndexOf('"', 1);
-                if (endQuote > 0)
+                // skip whitespace
+                while (i < n && char.IsWhiteSpace(input[i])) i++;
+                if (i >= n) break;
+
+                string token;
+                if (input[i] == '"')
                 {
-                    string file = input.Substring(1, endQuote - 1);
-                    string args = input.Substring(endQuote + 1).Trim();
-                    return (file, args);
+                    // quoted token
+                    i++; // skip opening quote
+                    int start = i;
+                    while (i < n && input[i] != '"') i++;
+                    token = input.Substring(start, i - start);
+                    if (i < n && input[i] == '"') i++; // skip closing quote if present
                 }
+                else
+                {
+                    // unquoted token
+                    int start = i;
+                    while (i < n && !char.IsWhiteSpace(input[i])) i++;
+                    token = input.Substring(start, i - start);
+                }
+
+                tokens.Add(token);
             }
 
-            int firstSpace = input.IndexOf(' ');
-            if (firstSpace < 0) return (input, string.Empty);
-            string fileUnquoted = input.Substring(0, firstSpace);
-            string remainingArgs = input.Substring(firstSpace + 1).Trim();
-            return (fileUnquoted, remainingArgs);
+            if (tokens.Count == 0) return (string.Empty, string.Empty);
+
+            var file = tokens[0];
+            if (tokens.Count == 1) return (file, string.Empty);
+
+            // Rebuild arguments: quote any token that contains whitespace so they are passed as single args.
+            var args = string.Join(" ", tokens.Skip(1).Select(t => t.IndexOfAny(new[] { ' ', '\t' }) >= 0 ? $"\"{t}\"" : t));
+            return (file, args);
         }
 
-        private async Task OpenExternalAppAsync(string programCommand, string title)
+        private async Task OpenExternalAppAsync(string programCommand, string title, string? startIn)
         {
             TabItem tabItem = null;
             WindowsFormsHost host = null;
@@ -114,10 +138,12 @@ namespace WindowsAppMvp
 
             try
             {
+                // Create UI objects and add the TabItem to the TabControl first so
+                // any RelativeSource FindAncestor bindings in the header/template
+                // can find the TabControl ancestor when the header is created.
                 Dispatcher.Invoke(() =>
                 {
                     tabItem = new TabItem();
-                    tabItem.Header = CreateTabHeader(title, tabItem);
 
                     host = new WindowsFormsHost();
                     panel = new System.Windows.Forms.Panel
@@ -132,9 +158,18 @@ namespace WindowsAppMvp
                     tabItem.IsSelected = true;
                 });
 
+                // Create and assign header after the TabItem is in the visual tree
+                Dispatcher.Invoke(() =>
+                {
+                    if (tabItem != null)
+                    {
+                        tabItem.Header = CreateTabHeader(title, tabItem);
+                    }
+                });
+
                 var (file, args) = ParseProgramAndArgs(programCommand);
 
-                var process = await StartProcessAndEmbedAsync(file, args, panel).ConfigureAwait(false);
+                var process = await StartProcessAndEmbedAsync(file, args, panel, startIn).ConfigureAwait(false);
                 if (process != null)
                 {
                     Dispatcher.Invoke(() =>
@@ -163,13 +198,15 @@ namespace WindowsAppMvp
             }
         }
 
-        private async Task<Process?> StartProcessAndEmbedAsync(string exePath, string arguments, System.Windows.Forms.Panel hostPanel)
+        private async Task<Process?> StartProcessAndEmbedAsync(string exePath, string arguments, System.Windows.Forms.Panel hostPanel, string? workingDirectory = null)
         {
             var psi = new ProcessStartInfo
             {
                 FileName = exePath,
                 Arguments = arguments,
-                WorkingDirectory = System.IO.Path.GetDirectoryName(exePath) ?? string.Empty,
+                WorkingDirectory = !string.IsNullOrWhiteSpace(workingDirectory)
+                    ? workingDirectory
+                    : (System.IO.Path.GetDirectoryName(exePath) ?? string.Empty),
                 UseShellExecute = false
             };
 
