@@ -10,4 +10,7 @@
     <OutputType>WinExe</OutputType>
     <AssemblyName>WindowsAppMvp</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="App_Manager.csproj" />
+  </ItemGroup>
 </Project>

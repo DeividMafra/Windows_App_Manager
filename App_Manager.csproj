@@ -1,0 +1,5 @@
+<ItemGroup>
+  <Content Include="programs.json">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </Content>
+</ItemGroup>

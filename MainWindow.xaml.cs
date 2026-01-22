@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Forms;
 using System.Windows.Forms.Integration;
+using System.Windows.Threading;
+using System.Windows.Forms;
 
 namespace WindowsAppMvp
 {
@@ -14,61 +16,221 @@ namespace WindowsAppMvp
         public MainWindow()
         {
             InitializeComponent();
-            // Select the first program by default
-            ProgramComboBox.SelectedIndex = 0;
+            LoadPrograms();
         }
 
-        // List to keep track of processes for clean shutdown
         private readonly List<Process> _processes = new List<Process>();
+        private const string ProgramsFileName = "programs.json";
+        private List<string> _programs = new();
 
-        private void OpenButton_Click(object sender, RoutedEventArgs e)
-        {
-            // Get the selected program path
-            if (ProgramComboBox.SelectedItem is ComboBoxItem item && item.Content is string program)
-            {
-                OpenExternalApp(program);
-            }
-        }
-
-        private void OpenExternalApp(string programPath)
+        private void LoadPrograms()
         {
             try
             {
-                // Create a new tab
-                var tabItem = new TabItem();
-                tabItem.Header = CreateTabHeader(programPath, tabItem);
+                // Always read from the fixed development path
+                string path = @"C:\Dev\App_Manager\programs.json";
+                if (System.IO.File.Exists(path))
+                {
+                    var json = System.IO.File.ReadAllText(path);
+                    _programs = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+                }
+                else
+                {
+                    _programs = new List<string> { "notepad.exe", "calc.exe", "mspaint.exe" };
+                }
 
-                // Create WindowsFormsHost with panel for embedding
-                var host = new WindowsFormsHost();
-                var panel = new Panel();
-                panel.BackColor = System.Drawing.Color.Black;
-                panel.Dock = DockStyle.Fill;
-                host.Child = panel;
+                ProgramComboBox.ItemsSource = _programs;
+                if (_programs.Count > 0) ProgramComboBox.SelectedIndex = 0;
+            }
+            catch
+            {
+                // fall back to defaults
+                _programs = new List<string> { "notepad.exe", "calc.exe", "mspaint.exe" };
+                ProgramComboBox.ItemsSource = _programs;
+                ProgramComboBox.SelectedIndex = 0;
+            }
+        }
 
-                tabItem.Content = host;
-                AppTabControl.Items.Add(tabItem);
-                tabItem.IsSelected = true;
+        private void SavePrograms()
+        {
+            try
+            {
+                string path = System.IO.Path.Combine(AppContext.BaseDirectory, ProgramsFileName);
+                var json = System.Text.Json.JsonSerializer.Serialize(_programs, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                System.IO.File.WriteAllText(path, json);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Failed saving programs list: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
 
-                // Start process and embed window
-                var process = StartProcessAndEmbed(programPath, panel);
+        private async void OpenButton_Click(object sender, RoutedEventArgs e)
+        {
+            string? program = null;
+            // Support both bound strings and legacy ComboBoxItem entries
+            if (ProgramComboBox.SelectedItem is string s) program = s;
+            else if (ProgramComboBox.SelectedItem is ComboBoxItem item && item.Content is string c) program = c;
+
+            if (!string.IsNullOrEmpty(program))
+            {
+                // NOTE: intentionally not using ConfigureAwait(false) so continuation runs on UI thread
+                await OpenExternalAppAsync(program);
+            }
+        }
+
+        private static (string file, string args) ParseProgramAndArgs(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return (input, string.Empty);
+            input = input.Trim();
+            if (input.StartsWith("\""))
+            {
+                // quoted executable path
+                int endQuote = input.IndexOf('"', 1);
+                if (endQuote > 0)
+                {
+                    string file = input.Substring(1, endQuote - 1);
+                    string args = input.Substring(endQuote + 1).Trim();
+                    return (file, args);
+                }
+            }
+
+            // unquoted: split on first space
+            int firstSpace = input.IndexOf(' ');
+            if (firstSpace < 0) return (input, string.Empty);
+            string fileUnquoted = input.Substring(0, firstSpace);
+            string remainingArgs = input.Substring(firstSpace + 1).Trim();
+            return (fileUnquoted, remainingArgs);
+        }
+
+        private async Task OpenExternalAppAsync(string programPath)
+        {
+            TabItem tabItem = null;
+            WindowsFormsHost host = null;
+            System.Windows.Forms.Panel panel = null;
+
+            try
+            {
+                // Create UI objects on the UI thread
+                Dispatcher.Invoke(() =>
+                {
+                    tabItem = new TabItem();
+                    tabItem.Header = CreateTabHeader(programPath, tabItem);
+
+                    host = new WindowsFormsHost();
+                    panel = new System.Windows.Forms.Panel
+                    {
+                        BackColor = System.Drawing.Color.Black,
+                        Dock = DockStyle.Fill
+                    };
+                    host.Child = panel;
+
+                    tabItem.Content = host;
+                    AppTabControl.Items.Add(tabItem);
+                    tabItem.IsSelected = true;
+                });
+
+                var (file, args) = ParseProgramAndArgs(programPath);
+
+                var process = await StartProcessAndEmbedAsync(file, args, panel).ConfigureAwait(false);
                 if (process != null)
                 {
-                    // Store process for later cleanup
-                    tabItem.Tag = process;
+                    // Tag and track process on UI thread
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (tabItem != null)
+                        {
+                            tabItem.Tag = process;
+                        }
+                    });
                     _processes.Add(process);
+                }
+                else
+                {
+                    if (tabItem != null)
+                    {
+                        Dispatcher.Invoke(() => CloseTab(tabItem));
+                    }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to open {programPath}: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Dispatcher.Invoke(() =>
+                {
+                    System.Windows.MessageBox.Show($"Failed to open {programPath}: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                });
             }
+        }
+
+        private async Task<Process?> StartProcessAndEmbedAsync(string exePath, string arguments, System.Windows.Forms.Panel hostPanel)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = arguments,
+                WorkingDirectory = System.IO.Path.GetDirectoryName(exePath) ?? string.Empty,
+                UseShellExecute = false
+            };
+
+            var process = new Process { StartInfo = psi };
+            process.Start();
+
+            // Wait for main window handle with timeout (don't block UI thread)
+            var sw = Stopwatch.StartNew();
+            const int timeoutMs = 15000; // increased timeout
+            while (process.MainWindowHandle == IntPtr.Zero && !process.HasExited && sw.ElapsedMilliseconds < timeoutMs)
+            {
+                // attempt to let the GUI initialize
+                try
+                {
+                    process.WaitForInputIdle(200);
+                }
+                catch
+                {
+                    // WaitForInputIdle can throw for non-GUI processes — ignore
+                }
+                await Task.Delay(100).ConfigureAwait(false);
+            }
+
+            if (process.HasExited || process.MainWindowHandle == IntPtr.Zero)
+            {
+                try { if (!process.HasExited) process.Kill(); } catch { }
+                return null;
+            }
+
+            IntPtr mainHandle = process.MainWindowHandle;
+
+            // Set parent and change styles on UI thread (hostPanel.Handle must be accessed from the thread that owns it)
+            Dispatcher.Invoke(() =>
+            {
+                NativeMethods.SetParent(mainHandle, hostPanel.Handle);
+
+                // Update styles: remove caption/frame, set child & visible
+                long style = NativeMethods.GetWindowLongPtr(mainHandle, NativeMethods.GWL_STYLE).ToInt64();
+                style &= ~(NativeMethods.WS_CAPTION | NativeMethods.WS_THICKFRAME);
+                style |= (NativeMethods.WS_CHILD | NativeMethods.WS_VISIBLE);
+                NativeMethods.SetWindowLongPtr(mainHandle, NativeMethods.GWL_STYLE, new IntPtr(style));
+
+                // Force window to update style and show
+                NativeMethods.SetWindowPos(mainHandle, IntPtr.Zero, 0, 0, hostPanel.ClientSize.Width, hostPanel.ClientSize.Height,
+                    NativeMethods.SWP_NOZORDER | NativeMethods.SWP_SHOWWINDOW | NativeMethods.SWP_FRAMECHANGED);
+
+                // Handle resizing
+                hostPanel.SizeChanged += (s, e) =>
+                {
+                    NativeMethods.SetWindowPos(mainHandle, IntPtr.Zero, 0, 0, hostPanel.ClientSize.Width, hostPanel.ClientSize.Height,
+                        NativeMethods.SWP_NOZORDER | NativeMethods.SWP_SHOWWINDOW);
+                };
+            });
+
+            return process;
         }
 
         private object CreateTabHeader(string title, TabItem tabItem)
         {
-            var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
+            var headerPanel = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
             var text = new TextBlock { Text = title, Margin = new Thickness(0, 0, 5, 0) };
-            var closeButton = new Button
+            var closeButton = new System.Windows.Controls.Button
             {
                 Content = "×",
                 Width = 16,
@@ -86,112 +248,29 @@ namespace WindowsAppMvp
         private void CloseTab(TabItem tabItem)
         {
             if (tabItem == null) return;
-            // Close process associated with tab
             if (tabItem.Tag is Process proc)
             {
                 try
                 {
-                    if (!proc.HasExited)
-                    {
-                        proc.Kill();
-                    }
+                    if (!proc.HasExited) proc.Kill();
                 }
-                catch
-                {
-                    // ignore errors
-                }
+                catch { }
                 _processes.Remove(proc);
             }
             AppTabControl.Items.Remove(tabItem);
         }
 
-        private Process StartProcessAndEmbed(string programPath, Panel hostPanel)
-        {
-            var process = new Process
-            {
-                StartInfo = new ProcessStartInfo(programPath)
-                {
-                    WorkingDirectory = System.IO.Path.GetDirectoryName(programPath),
-                    UseShellExecute = true
-                }
-            };
-            process.Start();
-            // Wait for the process to create its main window
-            process.WaitForInputIdle();
-
-            IntPtr mainHandle = process.MainWindowHandle;
-            if (mainHandle == IntPtr.Zero)
-            {
-                // Could not get handle
-                return null;
-            }
-
-            // Re-parent the external window to the panel
-            NativeMethods.SetParent(mainHandle, hostPanel.Handle);
-
-            // Change style to child and remove title bar and resizable frame
-            int style = NativeMethods.GetWindowLong(mainHandle, NativeMethods.GWL_STYLE);
-            style = style | NativeMethods.WS_CHILD;
-            style = style & ~NativeMethods.WS_CAPTION & ~NativeMethods.WS_THICKFRAME;
-            NativeMethods.SetWindowLong(mainHandle, NativeMethods.GWL_STYLE, style);
-
-            // Resize the embedded window to fill the panel
-            ResizeEmbeddedWindow(mainHandle, hostPanel);
-
-            // Hook size changed to update window size
-            hostPanel.SizeChanged += (s, e) =>
-            {
-                ResizeEmbeddedWindow(mainHandle, hostPanel);
-            };
-
-            return process;
-        }
-
-        private void ResizeEmbeddedWindow(IntPtr windowHandle, Panel hostPanel)
-        {
-            NativeMethods.MoveWindow(windowHandle, 0, 0, hostPanel.ClientSize.Width, hostPanel.ClientSize.Height, true);
-        }
-
         protected override void OnClosed(EventArgs e)
         {
             base.OnClosed(e);
-            // Kill all processes on exit
             foreach (var proc in _processes)
             {
                 try
                 {
-                    if (!proc.HasExited)
-                    {
-                        proc.Kill();
-                    }
+                    if (!proc.HasExited) proc.Kill();
                 }
-                catch
-                {
-                    // ignore errors
-                }
+                catch { }
             }
         }
-    }
-
-    internal static class NativeMethods
-    {
-        [DllImport("user32.dll")]
-        public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
-        public const int GWL_STYLE = -16;
-        public const int WS_CHILD = 0x40000000;
-        public const int WS_VISIBLE = 0x10000000;
-        public const int WS_CAPTION = 0x00C00000;
-        public const int WS_THICKFRAME = 0x00040000;
     }
 }
